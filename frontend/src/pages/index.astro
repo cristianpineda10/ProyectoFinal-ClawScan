@@ -1,0 +1,81 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+const api = process.env.API_BASE_URL || 'http://localhost:3001';
+let reports = [];
+let scanners = [];
+let targets = [];
+try {
+  const [reportResponse, scannerResponse, targetResponse] = await Promise.all([
+    fetch(`${api}/api/reports`, { signal: AbortSignal.timeout(3000) }),
+    fetch(`${api}/api/scanners`, { signal: AbortSignal.timeout(3000) }),
+    fetch(`${api}/api/targets`, { signal: AbortSignal.timeout(3000) })
+  ]);
+  if (reportResponse.ok) reports = await reportResponse.json();
+  if (scannerResponse.ok) scanners = await scannerResponse.json();
+  if (targetResponse.ok) targets = await targetResponse.json();
+} catch { /* The API may still be starting. */ }
+---
+<BaseLayout title="ClawScan Local | Sandbox">
+  <section class="mb-8 grid gap-8 xl:grid-cols-[1.15fr_0.85fr]">
+    <div>
+      <p class="mb-3 text-xs font-bold uppercase tracking-[0.3em] text-cyan-400">ClawScan · análisis configurable</p>
+      <h1 class="mb-4 max-w-3xl text-4xl font-black leading-tight text-white md:text-5xl">Ajusta cada ejecución. <span class="text-cyan-300">Explora toda la evidencia.</span></h1>
+      <p class="mb-7 max-w-2xl text-slate-400">Selecciona una skill o plugin, el scanner y los límites de recursos. Cada escaneo genera un reporte completo con métricas, hallazgos y evidencia por archivo.</p>
+      <div class="panel p-6 md:p-8">
+        <div class="mb-6 flex items-start justify-between gap-4"><div><h2 class="text-xl font-bold text-white">Configurar escaneo</h2><p class="mt-1 text-sm text-slate-500">Solo se habilitan los scanners instalados en esta sandbox.</p></div><span class="rounded-full border border-emerald-800 bg-emerald-950/30 px-3 py-1 text-xs text-emerald-300">Entorno local</span></div>
+        <form id="scan-form" class="space-y-6">
+          <div>
+            <label class="label" for="target">Skill o plugin dentro de targets/</label>
+            <input class="input" id="target" name="target" list="target-options" placeholder="test-skill" required pattern="[A-Za-z0-9._/-]+" />
+            <datalist id="target-options">{targets.map(item => <option value={item.target}>{item.kind}</option>)}</datalist>
+            <p class="mt-2 text-xs text-slate-500">{targets.length} objetivo(s) reconocidos. También puedes escribir una ruta relativa.</p>
+          </div>
+          <fieldset>
+            <legend class="label">Scanners</legend>
+            <div class="grid gap-3 md:grid-cols-2">
+              {scanners.map(scanner => <label class={`flex gap-3 rounded-lg border p-3 ${scanner.available ? 'cursor-pointer border-cyan-900 bg-cyan-950/20 hover:border-cyan-500' : 'border-slate-800 bg-slate-900/40 opacity-60'}`}>
+                <input class="mt-1 accent-cyan-400" type="checkbox" name="scanners" value={scanner.id} checked={scanner.id === 'clawscan-static'} disabled={!scanner.available} />
+                <span><span class="block text-sm font-semibold text-slate-100">{scanner.name}</span><span class="mt-1 block text-xs leading-relaxed text-slate-400">{scanner.description}</span><span class={`mt-2 block text-[10px] uppercase tracking-wider ${scanner.available ? 'text-emerald-300' : 'text-slate-500'}`}>{scanner.available ? 'Disponible' : scanner.reason}</span></span>
+              </label>)}
+            </div>
+          </fieldset>
+          <div class="grid gap-4 sm:grid-cols-3">
+            <div><label class="label" for="timeoutSeconds">Timeout (segundos)</label><input class="input" id="timeoutSeconds" name="timeoutSeconds" type="number" min="10" max="1800" step="10" value="600" required /></div>
+            <div><label class="label" for="memoryMb">Memoria (MB)</label><input class="input" id="memoryMb" name="memoryMb" type="number" min="256" max="4096" step="256" value="1024" required /></div>
+            <div><label class="label" for="cpuLimit">CPU (cores)</label><input class="input" id="cpuLimit" name="cpuLimit" type="number" min="0.5" max="4" step="0.5" value="2" required /></div>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-4"><p class="max-w-lg text-xs leading-relaxed text-slate-500">El contenedor se ejecuta sin red, con filesystem de solo lectura y capacidades Linux eliminadas.</p><button class="button min-w-52" id="submit-button" type="submit">Iniciar análisis</button></div>
+        </form>
+        <div id="scan-status" class="mt-5 hidden rounded-lg border border-slate-700 bg-slate-900 p-4 text-sm" aria-live="polite"></div>
+      </div>
+    </div>
+    <aside class="panel p-6 md:p-8">
+      <div class="mb-5 flex items-center justify-between"><div><p class="label">Historial</p><h2 class="text-xl font-bold text-white">Análisis recientes</h2></div><span class="rounded-full border border-cyan-900 px-3 py-1 text-xs text-cyan-300">{reports.length}</span></div>
+      {reports.length ? <ul class="space-y-3">{reports.map(report => <li class="rounded-lg border border-slate-800 bg-slate-900/70 p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><a class="break-all font-mono text-sm text-cyan-300 hover:text-cyan-100" href={`/reports/${report.filename}`}>{report.filename}</a><p class="mt-2 text-xs text-slate-500">{new Date(report.date).toLocaleString('es-CO')} · {(report.size / 1024).toFixed(1)} KB</p></div><a class="shrink-0 text-xs text-slate-400 hover:text-white" href={`/reports/${report.filename}`}>Abrir →</a></div></li>)}</ul> : <p class="rounded-lg border border-dashed border-slate-700 p-6 text-center text-sm text-slate-500">No hay reportes todavía.</p>}
+      <div class="mt-6 grid grid-cols-2 gap-3"><div class="rounded-lg bg-slate-900 p-4"><p class="text-xs text-slate-500">Targets locales</p><p class="mt-1 text-2xl font-black text-cyan-300">{targets.length}</p></div><div class="rounded-lg bg-slate-900 p-4"><p class="text-xs text-slate-500">Scanners listos</p><p class="mt-1 text-2xl font-black text-cyan-300">{scanners.filter(scanner => scanner.available).length}</p></div></div>
+      <p class="mt-5 text-xs leading-relaxed text-slate-500">ClawScan está diseñado para revisar skills y plugins OpenClaw. Los demás scanners aparecerán habilitados cuando sus dependencias y credenciales estén configuradas.</p>
+    </aside>
+  </section>
+  <script>
+    const form = document.querySelector('#scan-form');
+    const statusBox = document.querySelector('#scan-status');
+    const button = document.querySelector('#submit-button');
+    form?.addEventListener('submit', async event => {
+      event.preventDefault(); button.disabled = true; statusBox.classList.remove('hidden'); statusBox.textContent = 'Validando opciones e iniciando ClawScan…';
+      const data = new FormData(form);
+      const scanners = data.getAll('scanners');
+      try {
+        const response = await fetch('/api/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target: data.get('target'), scanners, timeoutSeconds: Number(data.get('timeoutSeconds')), memoryMb: Number(data.get('memoryMb')), cpuLimit: Number(data.get('cpuLimit')) }) });
+        const scan = await response.json(); if (!response.ok) throw new Error(scan.error || 'No se pudo iniciar el escaneo.');
+        while (true) {
+          await new Promise(resolve => setTimeout(resolve, 1200));
+          const statusResponse = await fetch(`/api/scans/${scan.id}`); const state = await statusResponse.json();
+          statusBox.textContent = state.status === 'running' ? `Analizando ${state.target} · ${state.options.scanners.join(', ')}…` : state.status === 'completed' ? 'Análisis completado. Abriendo la visualización…' : `Estado: ${state.status}${state.error ? ` · ${state.error}` : ''}`;
+          if (state.status === 'completed') { location.href = `/reports/${encodeURIComponent(state.report)}`; return; }
+          if (['failed', 'cancelled'].includes(state.status)) break;
+        }
+      } catch (error) { statusBox.textContent = error.message; }
+      button.disabled = false;
+    });
+  </script>
+</BaseLayout>

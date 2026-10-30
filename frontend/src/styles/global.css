@@ -1,0 +1,10 @@
+@config "../../tailwind.config.mjs";
+@import "tailwindcss";
+
+:root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+html { background: #070a12; }
+body { margin: 0; background: radial-gradient(ellipse at top, #111b35 0, #070a12 55%); min-height: 100vh; color: #e5e7eb; }
+.panel { @apply rounded-xl border border-cyan-900/60 bg-slate-950/75 shadow-xl shadow-cyan-950/20; }
+.label { @apply mb-2 block text-xs font-semibold uppercase tracking-widest text-cyan-300; }
+.input { @apply w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2.5 text-slate-100 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-500/20; }
+.button { @apply rounded-lg bg-cyan-400 px-4 py-2.5 font-bold text-slate-950 transition hover:bg-cyan-300 disabled:cursor-not-allowed disabled:opacity-50; }

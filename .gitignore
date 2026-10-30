@@ -1,0 +1,7 @@
+reports/*.json
+!reports/.gitkeep
+targets/*
+!targets/.gitkeep
+node_modules/
+dist/
+.env

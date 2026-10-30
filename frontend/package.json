@@ -1,0 +1,8 @@
+{
+  "name": "clawscan-sandbox-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "astro dev --host 0.0.0.0", "build": "astro build", "preview": "astro preview --host 0.0.0.0" },
+  "dependencies": { "@astrojs/node": "^11.1.9", "@tailwindcss/vite": "^4.3.3", "astro": "^7.4.4", "tailwindcss": "^4.3.3" }
+}

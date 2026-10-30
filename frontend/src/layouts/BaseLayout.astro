@@ -1,0 +1,13 @@
+---
+import '../styles/global.css';
+const { title = 'ClawScan Local' } = Astro.props;
+---
+<!doctype html>
+<html lang="es">
+  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="description" content="Sandbox local para escaneo de skills OpenClaw con ClawScan." /><title>{title}</title></head>
+  <body><div class="mx-auto max-w-6xl px-5 py-8 md:px-8">
+    <header class="mb-10 flex items-center justify-between border-b border-cyan-950 pb-5"><a href="/" class="text-lg font-black tracking-wide text-cyan-300">CLAW<span class="text-white">SCAN</span><span class="ml-2 text-xs font-normal text-slate-500">LOCAL SANDBOX</span></a><a href="/" class="text-sm text-slate-400 hover:text-cyan-300">Panel</a></header>
+    <slot />
+    <footer class="mt-12 border-t border-slate-800 pt-5 text-xs text-slate-600">Escanea únicamente skills propias o autorizadas. ClawScan analiza artefactos de skills, no hosts ni puertos de red.</footer>
+  </div></body>
+</html>

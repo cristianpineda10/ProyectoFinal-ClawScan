@@ -1,0 +1,60 @@
+services:
+  clawscan:
+    image: clawscan-local:latest
+    build: ./scanner
+    entrypoint: ["/bin/true"]
+    networks: [claw_sandbox_net]
+  claw-backend:
+    build: ./backend
+    container_name: claw-backend
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      REPORTS_DIR: /app/reports
+      TARGETS_DIR: /app/targets
+      SCANNER_IMAGE: clawscan-local:latest
+      SCAN_TIMEOUT_MS: 1800000
+      MAX_SCAN_TIMEOUT_SECONDS: 1800
+      MAX_CONCURRENT_SCANS: 2
+      ALLOWED_ORIGIN: http://localhost:4321
+    ports: ["127.0.0.1:3001:3001"]
+    group_add: ["${DOCKER_GID:-0}"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - claw_reports:/app/reports
+      - claw_targets:/app/targets:ro
+    depends_on:
+      clawscan: { condition: service_completed_successfully }
+    restart: unless-stopped
+    networks: [claw_sandbox_net]
+  claw-frontend:
+    build: ./frontend
+    container_name: claw-frontend
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4321
+      API_BASE_URL: http://claw-backend:3001
+    ports: ["127.0.0.1:4321:4321"]
+    depends_on: { claw-backend: { condition: service_started } }
+    restart: unless-stopped
+    networks: [claw_sandbox_net]
+volumes:
+  claw_reports:
+    name: claw_reports
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${PROJECT_DIR:-.}/reports"
+  claw_targets:
+    name: claw_targets
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${PROJECT_DIR:-.}/targets"
+networks:
+  claw_sandbox_net:
+    name: claw_sandbox_net
+    driver: bridge

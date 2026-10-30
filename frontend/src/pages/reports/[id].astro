@@ -1,0 +1,61 @@
+---
+import BaseLayout from '../../layouts/BaseLayout.astro';
+const api = process.env.API_BASE_URL || 'http://localhost:3001';
+const { id } = Astro.params;
+let report = null;
+let errorMessage = '';
+let scannerRows = [];
+if (!id || !/^[a-f0-9-]{36}\.json$/.test(id)) errorMessage = 'Identificador de reporte inválido.';
+else {
+  try {
+    const response = await fetch(`${api}/api/reports/${encodeURIComponent(id)}`, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) errorMessage = response.status === 404 ? 'No se encontró el reporte.' : 'No se pudo cargar el reporte.';
+    else report = await response.json();
+  } catch { errorMessage = 'No fue posible conectar con la API de reportes.'; }
+}
+if (report) {
+  scannerRows = await Promise.all(Object.entries(report.scanners || {}).map(async ([scannerId, result]) => {
+    let evidence = result.raw || null;
+    if (result.outputPath) {
+      const fileUrl = `${api}/api/reports/${encodeURIComponent(id)}/files/${result.outputPath.split('/').map(encodeURIComponent).join('/')}`;
+      try { const response = await fetch(fileUrl, { signal: AbortSignal.timeout(10000) }); if (response.ok) evidence = await response.json(); } catch { /* Keep the inline scanner data. */ }
+    }
+    return { scannerId, result, evidence, findings: evidence?.findings || evidence?.issues || result.issues || result.findings || [], rules: evidence?.scanner?.rules || result.raw?.scanner?.rules || [] };
+  }));
+}
+const findings = scannerRows.flatMap(row => row.findings.map(finding => ({ ...finding, scanner: row.scannerId })));
+const severity = item => String(item.severity || item.risk || item.level || 'unknown').toLowerCase();
+const countSeverity = key => findings.filter(item => severity(item) === key).length;
+const elapsedMs = report?.startedAt && report?.completedAt ? Math.max(0, new Date(report.completedAt) - new Date(report.startedAt)) : scannerRows.reduce((total, row) => total + Number(row.result.durationMs || 0), 0);
+const scannedFiles = [...new Set(scannerRows.flatMap(row => row.evidence?.files?.scanned || []).map(file => file.path))];
+const omittedFiles = scannerRows.flatMap(row => (row.evidence?.files?.omitted || []).map(file => ({ ...file, scanner: row.scannerId })));
+const bytesScanned = scannerRows.reduce((total, row) => total + Number(row.evidence?.files?.totalScannedBytes || 0), 0);
+const target = typeof report?.target === 'string' ? report.target : report?.target?.resolvedPath || report?.target?.input || 'No especificado';
+const riskClass = level => ['critical', 'high'].includes(level) ? 'border-rose-800 bg-rose-950/30 text-rose-300' : level === 'medium' ? 'border-amber-800 bg-amber-950/30 text-amber-200' : level === 'low' ? 'border-sky-900 bg-sky-950/30 text-sky-200' : 'border-slate-700 bg-slate-900 text-slate-300';
+const statusClass = status => status === 'completed' ? 'text-emerald-300' : status === 'failed' ? 'text-rose-300' : status === 'skipped' ? 'text-amber-300' : 'text-cyan-300';
+const pretty = value => JSON.stringify(value, null, 2);
+---
+<BaseLayout title="Análisis ClawScan detallado">
+  <a href="/" class="mb-6 inline-block text-sm text-cyan-300 hover:text-white">← Volver al panel</a>
+  {errorMessage ? <div class="panel p-8 text-rose-300">{errorMessage}</div> : <>
+    <header class="mb-8 flex flex-wrap items-end justify-between gap-5"><div><p class="mb-2 text-xs uppercase tracking-[0.25em] text-cyan-400">Vista completa del análisis</p><h1 class="text-3xl font-black text-white md:text-4xl">Reporte ClawScan</h1><p class="mt-2 break-all font-mono text-sm text-slate-400">{target}</p></div><div class="text-right"><span class={`text-sm font-bold uppercase tracking-widest ${statusClass(report.status)}`}>{report.status || 'unknown'}</span><p class="mt-1 text-xs text-slate-500">Gate: {report.gate || 'sin gate'}</p></div></header>
+    <section class="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div class="panel p-4"><p class="label">Duración</p><p class="text-2xl font-black text-white">{elapsedMs < 1000 ? `${elapsedMs} ms` : `${(elapsedMs / 1000).toFixed(2)} s`}</p></div>
+      <div class="panel p-4"><p class="label">Scanners</p><p class="text-2xl font-black text-cyan-300">{scannerRows.length}<span class="ml-2 text-xs font-medium text-slate-500">{scannerRows.filter(row => row.result.status === 'completed').length} completados</span></p></div>
+      <div class="panel p-4"><p class="label">Hallazgos</p><p class="text-2xl font-black text-white">{findings.length}<span class="ml-2 text-xs font-medium text-rose-300">{countSeverity('critical') + countSeverity('high')} altos/críticos</span></p></div>
+      <div class="panel p-4"><p class="label">Archivos únicos</p><p class="text-2xl font-black text-white">{scannedFiles.length}<span class="ml-2 text-xs font-medium text-slate-500">{omittedFiles.length} omitidos</span></p></div>
+      <div class="panel p-4"><p class="label">Bytes analizados</p><p class="text-2xl font-black text-white">{bytesScanned.toLocaleString('es-CO')}</p></div>
+    </section>
+    <section class="mb-8 grid gap-4 lg:grid-cols-[0.75fr_1.25fr]">
+      <div class="panel p-5"><h2 class="mb-4 text-lg font-bold">Distribución de severidad</h2><div class="grid grid-cols-4 gap-2">{['critical','high','medium','low'].map(level => <div class={`rounded-lg border p-3 text-center ${riskClass(level)}`}><p class="text-[10px] uppercase tracking-wider">{level}</p><p class="mt-1 text-2xl font-black">{countSeverity(level)}</p></div>)}</div><p class="mt-4 text-xs text-slate-500">La clasificación usa la severidad reportada por cada scanner; no sustituye la revisión manual.</p></div>
+      <div class="panel p-5"><h2 class="mb-4 text-lg font-bold">Metadatos de ejecución</h2><dl class="grid gap-x-5 gap-y-3 text-sm sm:grid-cols-2"><div><dt class="text-xs text-slate-500">Esquema</dt><dd class="mt-1 font-mono text-slate-200">{report.schemaVersion || '—'}</dd></div><div><dt class="text-xs text-slate-500">Tipo de objetivo</dt><dd class="mt-1 text-slate-200">{report.target?.kind || '—'}</dd></div><div><dt class="text-xs text-slate-500">Inicio</dt><dd class="mt-1 text-slate-200">{report.startedAt ? new Date(report.startedAt).toLocaleString('es-CO') : '—'}</dd></div><div><dt class="text-xs text-slate-500">Finalización</dt><dd class="mt-1 text-slate-200">{report.completedAt ? new Date(report.completedAt).toLocaleString('es-CO') : '—'}</dd></div><div><dt class="text-xs text-slate-500">Sandbox declarada por ClawScan</dt><dd class="mt-1 text-slate-200">{report.sandbox?.mode || '—'} · red {report.sandbox?.network || '—'}</dd></div><div><dt class="text-xs text-slate-500">Gate</dt><dd class="mt-1 font-semibold text-slate-200">{report.gate || '—'}</dd></div></dl></div>
+    </section>
+    <section class="mb-8 panel p-5"><div class="mb-5 flex flex-wrap items-center justify-between gap-3"><h2 class="text-xl font-bold">Hallazgos ({findings.length})</h2><div class="flex gap-2 text-xs"><span class="rounded border border-rose-900 px-2 py-1 text-rose-300">Crítico {countSeverity('critical')}</span><span class="rounded border border-rose-900 px-2 py-1 text-rose-300">Alto {countSeverity('high')}</span><span class="rounded border border-amber-900 px-2 py-1 text-amber-200">Medio {countSeverity('medium')}</span></div></div>
+      {findings.length ? <div class="space-y-3">{findings.map((item, index) => <article class={`rounded-lg border p-4 ${riskClass(severity(item))}`}><div class="flex flex-wrap items-center justify-between gap-3"><div><p class="text-[10px] uppercase tracking-widest opacity-70">{item.scanner} · {item.ruleId || item.rule || item.id || `hallazgo-${index + 1}`}</p><h3 class="mt-1 font-bold">{item.title || item.name || item.message || item.description || 'Hallazgo de seguridad'}</h3></div><span class="rounded border border-current px-2 py-1 text-[10px] font-black uppercase">{severity(item)}</span></div><p class="mt-3 text-sm opacity-80">{item.description || item.message || item.summary || 'Consulta la evidencia sin procesar para obtener más contexto.'}</p><p class="mt-3 break-all font-mono text-xs opacity-65">{item.file || item.path || item.location?.file || ''}{item.line || item.location?.line ? `:${item.line || item.location.line}` : ''}</p><details class="mt-3"><summary class="cursor-pointer text-xs opacity-70">Evidencia del hallazgo</summary><pre class="mt-2 max-h-72 overflow-auto rounded bg-black/30 p-3 text-xs">{pretty(item)}</pre></details></article>)}</div> : <p class="rounded-lg border border-emerald-900 bg-emerald-950/20 p-5 text-sm text-emerald-200">No se reportaron hallazgos en este análisis.</p>}
+    </section>
+    <section class="mb-8"><div class="mb-4"><p class="label">Detalle por scanner</p><h2 class="text-2xl font-bold text-white">Ejecución y evidencia</h2></div>
+      <div class="space-y-4">{scannerRows.map(row => <article class="panel overflow-hidden"><div class="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 px-5 py-4"><div><h3 class="font-bold text-white">{row.evidence?.scanner?.name || row.scannerId}</h3><p class="mt-1 font-mono text-xs text-slate-500">{row.scannerId} · {row.evidence?.schemaVersion || row.result.status}</p></div><div class="text-right"><p class={`text-xs font-bold uppercase ${statusClass(row.result.status)}`}>{row.result.status}</p><p class="mt-1 text-xs text-slate-500">{Number(row.result.durationMs || 0)} ms</p></div></div><div class="grid gap-4 p-5 lg:grid-cols-2"><div><h4 class="mb-2 text-xs font-bold uppercase tracking-wider text-cyan-300">Comando</h4><pre class="overflow-auto rounded bg-slate-900 p-3 text-xs text-slate-300">{pretty(row.result.command || [])}</pre>{row.result.error && <p class="mt-3 rounded border border-rose-900 bg-rose-950/20 p-3 text-xs text-rose-200">{row.result.error}</p>}<h4 class="mb-2 mt-5 text-xs font-bold uppercase tracking-wider text-cyan-300">Reglas del scanner ({row.rules.length})</h4>{row.rules.length ? <ul class="space-y-2">{row.rules.map(rule => <li class="rounded bg-slate-900 p-3"><div class="flex justify-between gap-2"><code class="text-xs text-slate-200">{rule.id}</code><span class={`text-[10px] uppercase ${riskClass(severity(rule))}`}>{rule.severity}</span></div><p class="mt-1 text-xs leading-relaxed text-slate-500">{rule.description}</p></li>)}</ul> : <p class="text-xs text-slate-500">El scanner no publicó catálogo de reglas.</p>}</div><div><h4 class="mb-2 text-xs font-bold uppercase tracking-wider text-cyan-300">Archivos examinados ({row.evidence?.files?.scanned?.length || 0})</h4>{row.evidence?.files?.scanned?.length ? <ul class="max-h-64 space-y-2 overflow-auto">{row.evidence.files.scanned.map(file => <li class="rounded bg-slate-900 p-3"><p class="break-all font-mono text-xs text-slate-200">{file.path}</p><p class="mt-1 text-[10px] text-slate-500">{Number(file.bytes || 0).toLocaleString('es-CO')} bytes · SHA-256 {file.sha256 || '—'}</p></li>)}</ul> : <p class="text-xs text-slate-500">Sin archivos listados.</p>}<h4 class="mb-2 mt-5 text-xs font-bold uppercase tracking-wider text-amber-300">Archivos omitidos ({row.evidence?.files?.omitted?.length || 0})</h4>{row.evidence?.files?.omitted?.length ? <ul class="space-y-2">{row.evidence.files.omitted.map(file => <li class="rounded border border-amber-950 bg-amber-950/10 p-3 text-xs text-amber-200"><span class="break-all font-mono">{file.path || file.name}</span><p class="mt-1 text-[10px] opacity-70">{file.reason || file.category || 'Motivo no detallado'}</p></li>)}</ul> : <p class="text-xs text-slate-500">No se omitieron archivos.</p>}</div></div><details class="border-t border-slate-800 px-5 py-4"><summary class="cursor-pointer text-sm text-cyan-300">Abrir evidencia JSON completa de {row.scannerId}</summary><pre class="mt-3 max-h-[40rem] overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-relaxed text-cyan-100">{pretty(row.evidence || row.result)}</pre></details></article>)}</div>
+    </section>
+    <details class="panel p-5"><summary class="cursor-pointer font-bold text-slate-200">Ver artefacto ClawScan completo</summary><pre class="mt-4 max-h-[48rem] overflow-auto rounded-lg bg-slate-950 p-4 text-xs leading-relaxed text-cyan-100">{pretty(report)}</pre></details>
+  </>}
+</BaseLayout>
